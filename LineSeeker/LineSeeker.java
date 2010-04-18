@@ -16,7 +16,7 @@ public class LineSeeker {
     private static SimpleNavigator sn;
     private static boolean onblack = false;
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
         System.out.println("Program started.");
 
         Pilot pilot = new TachoPilot((float) 5.6F, 17, Motor.A, Motor.B, false);
@@ -27,16 +27,27 @@ public class LineSeeker {
         scannerThread.setDaemon(true);
         scannerThread.start();
 
-        for (int i = 0; i < 100; i++) {
+        // Wait to calibrate
+        Thread.sleep(1500);
 
-            System.out.println("OnBlack? " + (onblack ? "YES" : "NO"));
+        // Find first black line
+        sn.forward();
 
-            try {
-                Thread.sleep(200);
-            } catch (InterruptedException ex) {
-                // Ok.
-            }
+        while (!onblack) {
+            // keep forwarding...
         }
+        
+        sn.stop();
+
+
+
+//        for (int i = 0; i < 100; i++) {
+//
+//            System.out.println("OnBlack? " + (onblack ? "YES" : "NO"));
+//
+//
+//            Thread.sleep(200);
+//        }
 
         System.out.println("Press a button to exit.");
         Button.waitForPress();
@@ -85,7 +96,7 @@ public class LineSeeker {
                         onblack = false;
                     }
                 }
-                
+
                 prevValue = nvalue;
 
                 try {
