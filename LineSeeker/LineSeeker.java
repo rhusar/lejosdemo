@@ -14,11 +14,16 @@ import lejos.robotics.navigation.TachoPilot;
 public class LineSeeker {
 
     // Contants
-    public static final float BW_RATIO = 0.85F;
-    public static final int MOVE_RIGHT_MOD = -1;
+    public static final float BW_RATIO = 0.90F;
+    public static final int BW_SAMPLES = 2;
+    public static final int BW_INTERVAL = 10; // in ms
+    public static final int SCAN_RIGHT_MOD = -1;
+    public static final int SCAN_SMALL_DEG = 10;
+    public static final int SCAN_FULL_DEG = 90;
     // Shared variables
     private static SimpleNavigator sn;
     private static boolean onblack = false;
+    //private static SoundController sound;
 
     public static void main(String[] args) throws Exception {
         System.out.println("Program started.");
@@ -27,11 +32,16 @@ public class LineSeeker {
         sn = new SimpleNavigator(pilot);
         sn.setMoveSpeed(5F);
 
+        // Start sound thread
+//        sound = new SoundController();
+//        sound.setDaemon(true);
+//        sound.start();
+
         LightScannerThread scannerThread = new LightScannerThread();
         scannerThread.setDaemon(true);
         scannerThread.start();
 
-        // Wait to calibrate
+        // Wait to calibrate (startup 500, calibration 1000)
         Thread.sleep(1500);
 
         // Find first black line
@@ -41,13 +51,14 @@ public class LineSeeker {
             // Keep forwarding until you reach the line.
         }
 
-        sn.setMoveSpeed(5F);
-        sn.setTurnSpeed(15F);
+        sn.setMoveSpeed(10F);
+        sn.setTurnSpeed(10F);
 
         // Initialization DONE!
 
         // Variables for optimizing where to search
         boolean lastSearchRight = false;
+        boolean fullscan = false;
 
         while (true) {
             while (onblack) {
@@ -58,7 +69,7 @@ public class LineSeeker {
             // I am not on black, what now?
 
             // Keep turning right for few degrees, until black or not moving.
-            sn.rotate((lastSearchRight ? 1 : MOVE_RIGHT_MOD) * 15, true);
+            sn.rotate((lastSearchRight ? 1 : SCAN_RIGHT_MOD) * (fullscan ? SCAN_FULL_DEG : SCAN_SMALL_DEG), true);
             lastSearchRight = !lastSearchRight;
 
             while (sn.isMoving() && !onblack) {
@@ -69,13 +80,16 @@ public class LineSeeker {
                 // Yes, I found black! Just stop rotating now.
                 sn.stop();
 
+                // Fullscanning turn off.
+                fullscan = false;
+
                 // ...and keep forwarding to beyond!
                 sn.forward();
             } else {
                 // I stopped moving, but I am not on black still.... :(
 
                 // Let me try the other way.
-                sn.rotate((lastSearchRight ? 1 : MOVE_RIGHT_MOD) * 30, true);
+                sn.rotate((lastSearchRight ? 1 : SCAN_RIGHT_MOD) * (fullscan ? SCAN_FULL_DEG : SCAN_SMALL_DEG) * 2, true);
 
                 while (sn.isMoving() && !onblack) {
                     // Keep moving...
@@ -85,16 +99,25 @@ public class LineSeeker {
                     // Yes, I found black! Just stop now
                     sn.stop();
 
+                    // Fullscanning turn off.
+                    fullscan = false;
+
                     // ...and keep forwarding to beyond!
                     sn.forward();
                 } else {
                     // I stopped moving, but I am not on black still and this was a second attempt.
-                    // I failed...
 
-                    System.out.println("ERROR! Path not found (or more than 15 degrees turn found).");
+                    // Was this a full scan? If no, turn it on for next progress.
+                    if (!fullscan) {
+                        fullscan = true;
+                        System.out.println("Fullscan ON");
+                    } else {
+                        // I failed even after full scan
+                        System.out.println("ERROR! Path not found.");
 
-                    while (true != false) {
-                        // Wait until device reset.
+                        while (true != false) {
+                            // Wait until device reset.
+                        }
                     }
                 }
             }
@@ -115,9 +138,6 @@ public class LineSeeker {
      */
     static class LightScannerThread extends Thread {
 
-        int lightSamplesAvg = 0;
-        boolean calibrating = true;
-
         @Override
         public void run() {
 
@@ -125,53 +145,106 @@ public class LineSeeker {
             int high = ls.readValue();
             ls.setHigh(high);
 
-            int k = 0, nvalue = 0, prevValue = 0;
+            float lightSamplesAvg = 0;
+
+            // This sleep is necessary for the light to start up and get a
+            // proper default sample average to compare to.
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException ex) {
+                // OK
+            }
+
+            // Calibrate from 10 samples on white
+            for (int i = 0; i < 10; i++) {
+                lightSamplesAvg += ls.getNormalizedLightValue();
+
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException ex) {
+                    // OK
+                }
+            }
+
+            // Calculate average
+            lightSamplesAvg /= 10;
+            System.out.println("WhiteLightAvg: " + lightSamplesAvg);
+
+            // Start processing values
+
+            int i = 0, currentValue = 0;
+            float previousAvg = 0;
+            int[] previousValues = new int[BW_SAMPLES];
 
             while (true) {
 
-                nvalue = ls.readNormalizedValue();
+                currentValue = ls.readNormalizedValue();
 
-                if (calibrating) {
-                    if (k <= 10) {
-                        k++;
-                        lightSamplesAvg += nvalue;
-                    } else if (k == 11) {
-                        k++;
-                        lightSamplesAvg /= 10;
-                        System.out.println("Light AVG: " + lightSamplesAvg);
+                // Calculate current average
+                previousAvg = 0;
+                for (int j : previousValues) {
+                    previousAvg += j;
+                }
+                previousAvg /= BW_SAMPLES;
 
-                        calibrating = false;
+                //System.out.println(previousAvg + "/" + currentValue + "/" + lightSamplesAvg);
+
+                // Am I on black again?
+                if (previousAvg < (lightSamplesAvg * BW_RATIO)) {
+
+                    // I am on black
+                    if (!onblack) {
+                        System.out.println("OFF->ON");
                     }
+                    onblack = true;
                 } else {
-                    // Am I on black again?
-                    if (((prevValue + nvalue) / 2) < lightSamplesAvg * BW_RATIO) {
 
-                        // I am on black
-                        if (!onblack) {
-                            System.out.println("OFF->ON");
-                        }
-
-                        onblack = true;
-                    } else {
-
-                        // I am not on black!!!
-                        if (onblack) {
-                            System.out.println("ON->OFF");
-                        }
-
-                        onblack = false;
+                    // I am not on black!!!
+                    if (onblack) {
+                        System.out.println("ON->OFF");
                     }
+
+                    onblack = false;
                 }
 
-                prevValue = nvalue;
+                previousValues[i] = currentValue;
+                i++;
+
+                if (i == BW_SAMPLES) {
+                    // Reset counter
+                    i = 0;
+                }
 
                 try {
-                    Thread.sleep(10);
+                    Thread.sleep(BW_INTERVAL);
                 } catch (InterruptedException ex) {
-                    // Ok.
+                    // OK
                 }
-
             }
         }
     }
+//    static class SoundController extends Thread {
+//
+//        @Override
+//        public void run() {
+//
+//            while (true) {
+//                try {
+//                    wait();
+//                } catch (InterruptedException ex) {
+//                    // Nothing.
+//                }
+//
+//                for (int i = 3; i < 6; i++) {
+//                    Sound.playTone(i * 100, 100);
+//                    try {
+//                        sleep(100);
+//                    } catch (InterruptedException ex) {
+//                        // n.
+//                    }
+//                }
+//            }
+//
+//        }
+//    }
 }
