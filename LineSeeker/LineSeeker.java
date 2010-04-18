@@ -14,6 +14,7 @@ import lejos.robotics.navigation.TachoPilot;
 public class LineSeeker {
 
     private static SimpleNavigator sn;
+    private static boolean onblack = false;
 
     public static void main(String[] args) {
         System.out.println("Program started.");
@@ -26,19 +27,29 @@ public class LineSeeker {
         scannerThread.setDaemon(true);
         scannerThread.start();
 
-        try {
-            Thread.sleep(10000);
-        } catch (InterruptedException ex) {
-            // Ok.
+        for (int i = 0; i < 100; i++) {
+
+            System.out.println("OnBlack? " + (onblack ? "YES" : "NO"));
+
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException ex) {
+                // Ok.
+            }
         }
 
         System.out.println("Press a button to exit.");
         Button.waitForPress();
     }
 
+    /**
+     * This thread will calibrate (first second) and then will only change bool
+     * value whether I am on back or not.
+     */
     static class LightScannerThread extends Thread {
 
         int lightSamplesAvg = 0;
+        boolean calibrating = true;
 
         @Override
         public void run() {
@@ -47,59 +58,42 @@ public class LineSeeker {
             int high = ls.readValue();
             ls.setHigh(high);
 
-            int k = 0, nvalue = 0;
-            boolean initializingPhase = true;
+            int k = 0, nvalue = 0, prevValue = 0;
 
             while (true) {
 
                 nvalue = ls.readNormalizedValue();
 
-                if (k <= 10) {
-                    k++;
-                    lightSamplesAvg += nvalue;
-                } else if (k == 11) {
-                    k++;
-                    lightSamplesAvg /= 10;
-                    System.out.println("ligh avg: " + lightSamplesAvg);
+                if (calibrating) {
+                    if (k <= 10) {
+                        k++;
+                        lightSamplesAvg += nvalue;
+                    } else if (k == 11) {
+                        k++;
+                        lightSamplesAvg /= 10;
+                        System.out.println("Light AVG: " + lightSamplesAvg);
 
-                    sn.forward();
-                }
-
-                // Am I on black again?
-                if (nvalue < lightSamplesAvg * 0.9) {
-                    // I am on black!
-
-                    if (initializingPhase == true) {
-                        // move to middle and rotate 9 degrees right
-                        initializingPhase = false;
-
-                        sn.rotate(15);
-                    } else {
-                        // im good, keep moving!
-
-                        sn.forward();
+                        calibrating = false;
                     }
-
-
                 } else {
-                    // I am not on black!!!
-
-                    if (initializingPhase) {
-                        // nothing, keep forward
+                    // Am I on black again?
+                    if (((prevValue + nvalue) / 2) < lightSamplesAvg * 0.9) {
+                        // I am on black
+                        onblack = true;
                     } else {
-                        sn.stop();
-                        sn.rotate(15);
+                        // I am not on black!!!
+                        onblack = false;
                     }
-
                 }
-
-                //System.out.println(ls.readNormalizedValue());
+                
+                prevValue = nvalue;
 
                 try {
                     Thread.sleep(100);
                 } catch (InterruptedException ex) {
                     // Ok.
                 }
+
             }
         }
     }
