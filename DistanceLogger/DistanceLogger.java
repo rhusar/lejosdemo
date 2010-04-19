@@ -31,8 +31,8 @@ public class DistanceLogger {
             // OK
         }
 
-        // Get and print the data obtained
-        for (int i = 0; i < 100; i++) {
+        // Get and print the data obtained for 20 seconds
+        for (int i = 0; i < 200; i++) {
 
             System.out.println("Distance: " + ultraSonicSensor.getDistance());
 
