@@ -25,7 +25,6 @@ public class LineSeeker {
     public static final int SCAN_SMALL_DEG = 20;
     public static final int SCAN_FULL_DEG = 90;
     // Shared variables
-    private static SimpleNavigator sn; // FIXME: move to private
     private static boolean onblack = false;
     private static int distance = 255;
     //private static SoundController sound;
@@ -34,7 +33,7 @@ public class LineSeeker {
         System.out.println("Program started.");
 
         Pilot pilot = new TachoPilot((float) 5.6F, 9.4F, Motor.A, Motor.B, false);
-        sn = new SimpleNavigator(pilot);
+        SimpleNavigator sn = new SimpleNavigator(pilot);
 
         sn.setMoveSpeed(10F);
         sn.setTurnSpeed(20F);
