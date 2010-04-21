@@ -34,7 +34,7 @@ public class LineSeeker {
     public static final int BW_SAMPLES = 2; // count of samples to be used to compare
     public static final int BW_INTERVAL = 5; // in ms
     public static final int DIST_INTERVAL = 50; // distance scanning interval in ms
-    public static final int DIST_TARGET = 15; // satisfactory distance to the ball
+    public static final int DIST_TARGET = 10; // satisfactory distance to the ball
     public static final int SCAN_RIGHT_MOD = -1; // modificator; -1 right, +1 left
     public static final int SCAN_SMALL_DEG = 20;
     public static final int SCAN_FULL_DEG = 90;
@@ -43,11 +43,14 @@ public class LineSeeker {
     private static int distance = 255;
     //private static SoundController sound;
 
+    private static final Motor motorC = Motor.C;
+    private static SimpleNavigator sn;
+
     public static void main(String[] args) throws Exception {
         System.out.println("Program started.");
 
-        Pilot pilot = new TachoPilot((float) 5.6F, 9.4F, Motor.A, Motor.B, false);
-        SimpleNavigator sn = new SimpleNavigator(pilot);
+        Pilot pilot = new TachoPilot((float) 5.6F, 12.5F, Motor.A, Motor.B, false);
+        sn = new SimpleNavigator(pilot);
 
         sn.setMoveSpeed(10F);
         sn.setTurnSpeed(20F);
@@ -83,9 +86,10 @@ public class LineSeeker {
         // Variables for optimizing search
         boolean lastSearchRight = false;
         boolean fullscan = false;
+        boolean ballFound = false;
 
-        while (true) {
-            while (onblack) {
+        while (!ballFound) {
+            while (onblack && !ballFound) {
                 // Keep forwarding! You are doing good
 
                 // FIXME: no need to call forward() so many times again
@@ -98,6 +102,8 @@ public class LineSeeker {
                     // I just reached the target distance!
                     System.out.println("I just found the ball.");
 
+                    ballFound = true;
+                    sn.stop();
                     // Make some annoying sound
                     for (int i = 4; i < 8; i++) {
                         Sound.playTone(i * 100, 200);
@@ -109,12 +115,20 @@ public class LineSeeker {
                         }
                     }
 
-
+                    
                     // TODO: implement logic if the ball is *really* found
                 }
 
             }
 
+            if (ballFound) {
+                System.out.println("..pick it and take home");
+                sn.stop();
+                pickTheBall();
+                goHome();
+
+                break;
+            }
             // I am not on black, what now?
 
             // Keep turning right for few degrees, until black or not moving.
@@ -179,6 +193,31 @@ public class LineSeeker {
 
         System.out.println("Press a button to exit.");
         Button.waitForPress();
+    }
+
+    private static void pickTheBall() {
+        //go backward
+        sn.travel(-20);
+
+        sn.setMoveSpeed(4F);
+        sn.setTurnSpeed(45F);
+
+        sn.rotate(190);
+
+        motorC.setSpeed(100);
+        //open the hands
+        motorC.rotate(60);
+
+        //pick the ball
+        sn.travel(-20);
+
+        //close the hands
+        motorC.rotate(-60);
+    }
+
+    private static void goHome() {
+        sn.setMoveSpeed(20F);
+        sn.goTo(0, 0);
     }
 
     /**
